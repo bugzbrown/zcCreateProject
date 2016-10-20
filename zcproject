@@ -1,0 +1,232 @@
+#!/usr/local/bin/node
+const commandLineArgs = require('command-line-args');
+const optionDefinitions = [
+  { name: 'help', alias: 'v', type: Boolean },
+  { name: 'folder', alias: 'f', type: String, multiple: true, defaultOption: true },
+  { name: 'ip', type: String }
+];
+
+var prompt = require('prompt');
+var fs = require('fs');
+var http = require('http');
+
+function errHandle(err){
+	console.log(err);
+	return 1;
+};
+
+var downloadFile = function(url, dest, cb) {
+    var file = fs.createWriteStream(dest);
+    var request = http.get(url, function(response) {
+
+        // check if response is success
+        if (response.statusCode !== 200) {
+            return cb('Response status was ' + response.statusCode);
+        }
+
+        response.pipe(file);
+
+        file.on('finish', function() {
+            file.close(cb);  // close() is async, call cb after close completes.
+        });
+    });
+
+    // check for request error too
+    request.on('error', function (err) {
+        fs.unlink(dest);
+
+        if (cb) {
+            return cb(err.message);
+        }
+    });
+
+    file.on('error', function(err) { // Handle errors
+        fs.unlink(dest); // Delete the file async. (But we don't check the result)
+
+        if (cb) {
+            return cb(err.message);
+        }
+    });
+};
+const pfol = "./greg/";
+var zc = (function(){
+	return {
+		projectName:'',
+		folder:'',
+		vagrant_ip: '',
+		promptSchema:{
+			properties: {
+				baseFolder:{
+				    description: 'baseFolder (./):',
+				    default: './',
+				    type: 'string'
+				},
+
+				projectName: {
+				    description: 'Enter Project Name',     // Prompt displayed to the user. If not supplied name will be used.
+				    type: 'string',                 // Specify the type of input to expect.
+				    //pattern: /^\w+$/,                  // Regular expression that input must be valid against.
+				    //message: 'Password must be letters', // Warning message to display if validation fails.
+				    hidden: false,                        // If true, characters entered will either not be output to console or will be outputed using the `replace` string.
+				    replace: '*',                        // If `hidden` is set it will replace each hidden character with the specified string.
+				    //default: 'lamepassword',             // Default value to use if no value is entered.
+				    required: true                        // If true, value entered must be non-empty.
+				    //before: function(value) { return 'v' + value; } // Runs before node-prompt callbacks. It modifies user's input
+				},
+				ipAddress:{
+				    description: 'Enter IP',     // Prompt displayed to the user. If not supplied name will be used.
+				    type: 'string',                 // Specify the type of input to expect.
+				    pattern: /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/,                  // Regular expression that input must be valid against.
+				    message: 'Must be an IP Address', // Warning message to display if validation fails.
+				    // hidden: false,                        // If true, characters entered will either not be output to console or will be outputed using the `replace` string.
+				    // replace: '*',                        // If `hidden` is set it will replace each hidden character with the specified string.
+				    // default: 'lamepassword',             // Default value to use if no value is entered.
+				    // required: true                        // If true, value entered must be non-empty.
+				    // before: function(value) { return 'v' + value; } // Runs before node-prompt callbacks. It modifies user's input
+				},
+				vmName:{
+				    description: 'VM Name:',
+				    type: 'string'
+				},
+				projectType:{
+				    description: 'Scaffold: \n1) Wordpress Site',
+				    type: 'number'
+				}
+			}
+		},
+		wpSchema:{
+			properties: {
+				themeName: {
+				    description: 'Enter Theme Name',     // Prompt displayed to the user. If not supplied name will be used.
+				    type: 'string',                 // Specify the type of input to expect.
+				    //pattern: /^\w+$/,                  // Regular expression that input must be valid against.
+				    //message: 'Password must be letters', // Warning message to display if validation fails.
+				    hidden: false,                        // If true, characters entered will either not be output to console or will be outputed using the `replace` string.
+				    replace: '*',                        // If `hidden` is set it will replace each hidden character with the specified string.
+				    //default: 'lamepassword',             // Default value to use if no value is entered.
+				    required: true                        // If true, value entered must be non-empty.
+				    //before: function(value) { return 'v' + value; } // Runs before node-prompt callbacks. It modifies user's input
+				},
+				themeFolder:{
+				    description: 'Enter IP',     // Prompt displayed to the user. If not supplied name will be used.
+				    type: 'string',                 // Specify the type of input to expect.
+				    // pattern: /^\w+$/,                  // Regular expression that input must be valid against.
+				    // message: 'Password must be letters', // Warning message to display if validation fails.
+				    // hidden: false,                        // If true, characters entered will either not be output to console or will be outputed using the `replace` string.
+				    // replace: '*',                        // If `hidden` is set it will replace each hidden character with the specified string.
+				    // default: 'lamepassword',             // Default value to use if no value is entered.
+				    // required: true                        // If true, value entered must be non-empty.
+				    // before: function(value) { return 'v' + value; } // Runs before node-prompt callbacks. It modifies user's input
+				}
+			}
+		},
+		init: function(){
+			// const options = commandLineArgs(optionDefinitions);
+			// console.log(options);
+			prompt.start();
+			var self = this;
+			prompt.get(this.promptSchema,function(err, result){	
+				if (err){
+					errHandle(err);
+				}else{
+					console.log(result);
+					self.createVagrant(result);
+					if (result.projectType==1){
+						self.wordpress(result);
+					}
+
+				}
+			});
+
+		},
+		createVagrant:function(result){
+			var fs = require('fs');
+			var buffer=''+ 
+				'### AUTOMATICIALLY CREATED '+ "\n" + 
+				'### '+ result.projectName + "\n" + 
+				'### '+ "\n" + 
+				'Vagrant.configure("2") do |config|'+ "\n" + 
+				'  config.vm.box = "ubuntu/xenial64"'+  "\n" + 
+				'  config.vm.boot_timeout = 600'+  "\n" + 
+				'  config.vm.network :private_network, ip: "' + result.ipAddress + '"'+  "\n" + 
+				'  #config.vm.network :public_network, ip: "192.168.1.38"'+  "\n" + 
+				'  config.ssh.forward_agent = true'+  "\n" + 
+				'  config.vm.provider :virtualbox do |v|'+  "\n" + 
+				'    v.name = "zcvm_' + result.vmName + '"'+  "\n" + 
+				'    v.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]'+  "\n" + 
+				'    v.customize ["modifyvm", :id, "--memory", 2048]'+  "\n" + 
+				'    v.cpus = 2'+  "\n" + 
+				'  end'+  "\n" + 
+				'  config.vm.synced_folder "./src", "/var/www", id: "vagrant-root", :mount_options => [\'dmode=777\',\'fmode=777\']'+  "\n" + 
+				'end' + "\n" ;
+			fs.writeFile(result.baseFolder + 'Vagrantfile', buffer, function (err) {
+			    if (err) 
+			        return console.log(err);
+			    console.log('Vagrant File Wirtten' + "\n");
+			});
+		},
+		/*
+		 * Create Package.json file
+		 */
+		createPackage:function(result){
+			var fs = require('fs');
+			var buffer=''+ 
+				'{' + "\n" ;
+				'  "name": "wp-DRGB",' + "\n" +
+				'  "version": "1.0.0",' + "\n" +
+				'  "description": "",' + "\n" +
+				'  "author": "Gregory Brown",' + "\n" +
+				'  "license": "MIT",' + "\n" +
+				'  "dests": "./main-site/wp-content/themes/drgb/assets/",' + "\n" +
+				'  "jsFileName": "js/main",' + "\n" +
+				'  "cssFileName": "css/main",' + "\n" +
+				'  "devDependencies": {' + "\n" +
+				'    "grunt": "^1.0.1",' + "\n" +
+				'    "grunt-contrib-cssmin": "^1.0.1",' + "\n" +
+				'    "grunt-contrib-sass": "^1.0.0",' + "\n" +
+				'    "grunt-contrib-uglify": "^1.0.1",' + "\n" +
+				'    "grunt-contrib-watch": "^1.0.0",' + "\n" +
+				'    "grunt-typedoc": "^0.2.4",' + "\n" +
+				'    "grunt-ts": "^5.5.1"' + "\n" +
+				'  }' + "\n" +
+				'}' + "\n" +
+				'' + "\n" +
+				'end' + "\n" ;
+			fs.writeFile(result.baseFolder + 'package.json', buffer, function (err) {
+			    if (err) 
+			        return console.log(err);
+			    console.log('package.json File Wirtten' + "\n");
+			});
+		},
+		copyTemplates:function(){
+			var exec = require('child_process').exec;
+			function copyFinish(error, stdout, stderr) { 
+				console.log("Dev Files Copied"); 
+				console.log(stdout) 
+			}
+			exec("cp -R ./templates/* " + pfol , copyFinish)
+		},
+		wordpress:function(result){
+			// console.log('WORD PRESS');
+			console.log('GETTING WORDPRESS FROM GITHUB')
+			console.log('Might take a couple of minutes')
+			//var sys = require('sys')
+			var exec = require('child_process').exec;
+
+			function gitFinish(error, stdout, stderr) { 
+				console.log(stdout) 
+			}
+			function themeFinish(error, stdout, stderr) { 
+				console.log(stdout) 
+			}
+			// function themeFinish(error, stdout, stderr) { 
+			// 	console.log(stdout) 
+			// }
+			console.log("git clone https://github.com/WordPress/WordPress.git " + pfol + "main-site");
+			//exec("git clone https://github.com/WordPress/WordPress.git " + pfol + "main-site", gitFinish)
+			//exec("wget http://wordpress.org/latest.tar.gz", puts);
+		}
+	};
+})();
+//zc.init();
+zc.copyTemplates();
