@@ -15,40 +15,21 @@ function errHandle(err){
 	return 1;
 };
 
-var downloadFile = function(url, dest, cb) {
-    var file = fs.createWriteStream(dest);
-    var request = http.get(url, function(response) {
-
-        // check if response is success
-        if (response.statusCode !== 200) {
-            return cb('Response status was ' + response.statusCode);
-        }
-
-        response.pipe(file);
-
-        file.on('finish', function() {
-            file.close(cb);  // close() is async, call cb after close completes.
-        });
-    });
-
-    // check for request error too
-    request.on('error', function (err) {
-        fs.unlink(dest);
-
-        if (cb) {
-            return cb(err.message);
-        }
-    });
-
-    file.on('error', function(err) { // Handle errors
-        fs.unlink(dest); // Delete the file async. (But we don't check the result)
-
-        if (cb) {
-            return cb(err.message);
-        }
-    });
-};
 const pfol = "./greg/";
+// SAMPLE PROMPT RETURN FOR WORPDRESS PROJECT
+const wp = {
+	projectName:'Sample Project',
+	baseFolder:'./testResults/',
+	ipAddress:'192.160.0.101',
+	vmName:'sample-vm',
+	author:'ZombieCorp',
+	authorMail:'<contato@zombiecorp.com.br>',
+	wordpress:{
+		themeName:'Sample Theme',
+		themeFolder:'sample-theme'
+	}
+};
+
 var zc = (function(){
 	return {
 		projectName:'',
@@ -120,6 +101,7 @@ var zc = (function(){
 				}
 			}
 		},
+		// add promt stuff here later
 		init: function(){
 			// const options = commandLineArgs(optionDefinitions);
 			// console.log(options);
@@ -139,6 +121,9 @@ var zc = (function(){
 			});
 
 		},
+		/*
+		 * Create Vagrant file
+		 */
 		createVagrant:function(result){
 			var fs = require('fs');
 			var buffer=''+ 
@@ -163,12 +148,13 @@ var zc = (function(){
 			    if (err) 
 			        return console.log(err);
 			    console.log('Vagrant File Wirtten' + "\n");
+			    zc.createTheme(result);
 			});
 		},
 		/*
 		 * Create Package.json file
 		 */
-		createPackage:function(result){
+		createPackageForWP:function(result){
 			var fs = require('fs');
 			var buffer=''+ 
 				'{' + "\n" ;
@@ -196,17 +182,28 @@ var zc = (function(){
 			    if (err) 
 			        return console.log(err);
 			    console.log('package.json File Wirtten' + "\n");
+			    zc.createVagrant(result);
 			});
 		},
-		copyTemplates:function(){
+		// copyTemplates:function(){
+		// 	var exec = require('child_process').exec;
+		// 	function copyFinish(error, stdout, stderr) { 
+		// 		console.log("Dev Files Copied"); 
+		// 		console.log(stdout) 
+		// 	}
+		// 	exec("cp -R ./templates/* " + pfol , copyFinish)
+		// },
+		getWPTemplates:function(config){
 			var exec = require('child_process').exec;
-			function copyFinish(error, stdout, stderr) { 
+			function finish(error, stdout, stderr) { 
 				console.log("Dev Files Copied"); 
-				console.log(stdout) 
+				zc.getWordpress(config);
 			}
-			exec("cp -R ./templates/* " + pfol , copyFinish)
+			let cmd = "git clone https://github.com/bugzbrown/devWPScaffold.git " + config.baseFolder + "";
+			console.log(cmd);
+			exec(cmd, finish);
 		},
-		wordpress:function(result){
+		getWordpress:function(config){
 			// console.log('WORD PRESS');
 			console.log('GETTING WORDPRESS FROM GITHUB')
 			console.log('Might take a couple of minutes')
@@ -214,19 +211,113 @@ var zc = (function(){
 			var exec = require('child_process').exec;
 
 			function gitFinish(error, stdout, stderr) { 
-				console.log(stdout) 
-			}
-			function themeFinish(error, stdout, stderr) { 
-				console.log(stdout) 
+				console.log("FINISHING THE INSTALL") 
+				zc.createPackageForWP(config);
+				
 			}
 			// function themeFinish(error, stdout, stderr) { 
 			// 	console.log(stdout) 
 			// }
-			console.log("git clone https://github.com/WordPress/WordPress.git " + pfol + "main-site");
-			//exec("git clone https://github.com/WordPress/WordPress.git " + pfol + "main-site", gitFinish)
+			console.log("git clone https://github.com/WordPress/WordPress.git " + config.baseFolder  + "src/main-site");
+			// TEMP CREATE DIRS FOR TESTING
+			console.log(" mkdir -p " + config.baseFolder  + "src/main-site/wp-content/themes");
+			exec("mkdir -p " + config.baseFolder  + "src/main-site/wp-content/themes", gitFinish);
+
+			//exec("git clone https://github.com/WordPress/WordPress.git " + config.baseFolder  + "src/main-site", gitFinish)
 			//exec("wget http://wordpress.org/latest.tar.gz", puts);
+		},
+		createStyle: function(config){
+			// here we create the basic infrastructure for a minimal wordpress theme
+			// we create a style.css file.
+			var fs = require('fs');
+
+			var buffer=''+ 
+				'{' + "\n" ;
+				'/*' + "\n" +
+				'Theme Name: ' + config.wordpress.themeName + "\n" +
+				'Author: ' + config.author + " <" + config.authorMail + ">" + "\n" +
+				'Description: New theme created with ZC_Project creator' + "\n" +
+				'Version: 1.0' + "\n" +
+				'*/' + "\n";
+
+			fs.writeFile(config.baseFolder + 'src/main-site/wp-content/themes/'  + config.wordpress.themeFolder + '/styles.css', buffer, function (err) {
+			    if (err) 
+			        return console.log(err);
+			    console.log('Styles Wirtten' + "\n");
+			    //zc.createHelpers(config);
+			});
+
+		},
+		createTheme: function(config){
+			console.log('Creating Helpers Folder')
+			var exec = require('child_process').exec;
+
+			function gitFinish(error, stdout, stderr) { 
+				zc.addGit(config);
+			}
+			exec("mkdir -p " + config.baseFolder  + "src/main-site/wp-content/themes/" + config.wordpress.themeFolder + "/Helpers/", gitFinish);
+		},
+		// we create a helpers folder.
+		addDetectMobile:function(config){
+			console.log('Adding Mobile-Detect')
+			var exec = require('child_process').exec;
+			function gitFinish(error, stdout, stderr) { 
+				console.log("FINISHING THE INSTALL");
+				console.log(stdout);
+				console.log(stderr);
+
+				zc.createStyle(config);
+			}
+
+			// TEMP CREATE DIRS FOR TESTING
+			//let cmd = "git submodule add https://github.com/serbanghita/Mobile-Detect.git " + config.baseFolder  + "src/main-site/wp-content/themes/" + config.wordpress.themeFolder + "/Helpers/Mobile-Detect";
+
+			//CLONE
+			let cmd = "git clone https://github.com/serbanghita/Mobile-Detect.git " + config.baseFolder  + "src/main-site/wp-content/themes/" + config.wordpress.themeFolder + "/Helpers/Mobile-Detect";
+			console.log(cmd);
+			exec(cmd, gitFinish);
+		},
+		addGit:function(config){
+			console.log('Adding Submodule Mobile-Detect')
+			var exec = require('child_process').exec;
+			function gitFinish(error, stdout, stderr) { 
+				console.log("FINISHING THE INSTALL");
+				console.log(stdout);
+				console.log(stderr);
+
+				zc.addDetectMobile(config);
+			}
+
+			// TEMP CREATE DIRS FOR TESTING
+			let cmd = "git init " + config.baseFolder ;
+
+			console.log(cmd);
+			exec(cmd, gitFinish);
 		}
+		// we add the submodule mobile detect
+		// we create a functions file with the bare bones of what we need.
 	};
 })();
+/**
+ * ORDER OF EVENS
+
+ 1 - INIT AND PROMPT QUESTIONS
+ 2 - GET CHOSEN REPOSITORIES
+ 3 - CREATE VAGRANT FILE
+*/
 //zc.init();
-zc.copyTemplates();
+
+/**** WORDPRESS INSTALL ****/
+// get template files from github
+zc.getWPTemplates(wp);
+
+zc.createTheme(wp);
+
+// make package.json
+// zc.createPackageForWP(config)
+// make vagrant file
+// zc.createVagrant(wp);
+// get latest wordpress package
+// zc.getWordpress(wp);
+//zc.setupTheme();
+
