@@ -5,6 +5,7 @@ const optionDefinitions = [
   { name: 'folder', alias: 'f', type: String, multiple: true, defaultOption: true },
   { name: 'ip', type: String }
 ];
+const untildify = require('untildify');
 
 var prompt = require('prompt');
 var fs = require('fs');
@@ -19,11 +20,13 @@ const pfol = "./greg/";
 // SAMPLE PROMPT RETURN FOR WORPDRESS PROJECT
 const wp = {
 	projectName:'Sample Project',
-	baseFolder:'./testResults/',
+	baseFolder:'~/work/testResults/',
 	ipAddress:'192.160.0.101',
 	vmName:'sample-vm',
 	author:'ZombieCorp',
-	authorMail:'<contato@zombiecorp.com.br>',
+	authorMail:'contato@zombiecorp.com.br',
+	dbRootPass:'saposapo',
+	domainName:'dev.testresults.com',
 	wordpress:{
 		themeName:'Sample Theme',
 		themeFolder:'sample-theme'
@@ -32,9 +35,8 @@ const wp = {
 
 var zc = (function(){
 	return {
-		projectName:'',
-		folder:'',
-		vagrant_ip: '',
+		baseConfig:{
+		},
 		promptSchema:{
 			properties: {
 				baseFolder:{
@@ -102,9 +104,13 @@ var zc = (function(){
 			}
 		},
 		// add promt stuff here later
-		init: function(){
-			// const options = commandLineArgs(optionDefinitions);
-			// console.log(options);
+		init: (obj)=>{
+			// here we setup eveything
+			// we call prompt here
+			let c = zc.fixObjects(obj);
+			zc.getWPTemplates(c);
+		},
+		prompt: function(){
 			prompt.start();
 			var self = this;
 			prompt.get(this.promptSchema,function(err, result){	
@@ -119,7 +125,11 @@ var zc = (function(){
 
 				}
 			});
-
+		},
+		fixObjects: (config) => {
+			// here we make sure things are OK
+			config.baseFolder = untildify(config.baseFolder);
+			return config;
 		},
 		getWPTemplates:function(config){
 			var exec = require('child_process').exec;
@@ -132,27 +142,22 @@ var zc = (function(){
 			exec(cmd, finish);
 		},
 		getWordpress:function(config){
-			// console.log('WORD PRESS');
 			console.log('GETTING WORDPRESS FROM GITHUB')
 			console.log('Might take a couple of minutes')
-			//var sys = require('sys')
 			var exec = require('child_process').exec;
 
 			function gitFinish(error, stdout, stderr) { 
-				console.log("FINISHING THE INSTALL") 
-				console.log(stdout) 
-				console.log(stderr) 
+				console.log("WP RESPONSE") 
+				console.log("stdOut: " + stdout) 
+				console.log("stdErr: " + stderr) 
 				zc.createPackageForWP(config);
-				
 			}
-			// function themeFinish(error, stdout, stderr) { 
-			// 	console.log(stdout) 
-			// }
-			console.log("git clone https://github.com/WordPress/WordPress.git " + config.baseFolder  + "src/main-site");
-			// TEMP CREATE DIRS FOR TESTING
-			// console.log(" mkdir -p " + config.baseFolder  + "src/main-site/wp-content/themes");
-			// exec("mkdir -p " + config.baseFolder  + "src/main-site/wp-content/themes", gitFinish);
-			let run = exec("git clone https://github.com/WordPress/WordPress.git " + config.baseFolder  + "src/main-site");
+
+			let cmd = "git clone https://github.com/WordPress/WordPress.git " + config.baseFolder  + "src/main-site";
+			//let cmd = "mkdir -p " + config.baseFolder  + "src/main-site/wp-content/themes/";
+			console.log(cmd);
+
+			let run = exec(cmd);
 			run.stdout.on('data', function(data){console.log('.')});
 			run.stderr.on('data', function(data){console.log(data)});
 			run.on('close', function(code){
@@ -169,9 +174,10 @@ var zc = (function(){
 		/*
 		 * Create Package.json file
 		 */
-		createPackageForWP:function(result){
+		createPackageForWP:function(config){
+			console.log("CREATE PACKAGE");
 			var fs = require('fs');
-			var buffer=''+ 
+			let buffer=''+ 
 				'{' + "\n" ;
 				'  "name": "wp-DRGB",' + "\n" +
 				'  "version": "1.0.0",' + "\n" +
@@ -193,11 +199,10 @@ var zc = (function(){
 				'}' + "\n" +
 				'' + "\n" +
 				'end' + "\n" ;
-			fs.writeFile(result.baseFolder + 'package.json', buffer, function (err) {
-			    if (err) 
-			        return console.log(err);
+			fs.writeFile(config.baseFolder + 'package.json', buffer, (err) => {
+			    if (err) throw err;
 			    console.log('package.json File Wirtten' + "\n");
-			    zc.createVagrant(result);
+			    zc.createVagrant(config);
 			});
 		},
 		/*
@@ -214,6 +219,7 @@ var zc = (function(){
 				'  config.vm.boot_timeout = 600'+  "\n" + 
 				'  config.vm.network :private_network, ip: "' + result.ipAddress + '"'+  "\n" + 
 				'  #config.vm.network :public_network, ip: "192.168.1.38"'+  "\n" + 
+				'  config.vm.provision "shell", path: "./provision.sh"'+  "\n" + 
 				'  config.ssh.forward_agent = true'+  "\n" + 
 				'  config.vm.provider :virtualbox do |v|'+  "\n" + 
 				'    v.name = "zcvm_' + result.vmName + '"'+  "\n" + 
@@ -227,17 +233,60 @@ var zc = (function(){
 			    if (err) 
 			        return console.log(err);
 			    console.log('Vagrant File Wirtten' + "\n");
-			    zc.createTheme(result);
+			    zc.createProvision(result);
 			});
 		},
-		// copyTemplates:function(){
-		// 	var exec = require('child_process').exec;
-		// 	function copyFinish(error, stdout, stderr) { 
-		// 		console.log("Dev Files Copied"); 
-		// 		console.log(stdout) 
-		// 	}
-		// 	exec("cp -R ./templates/* " + pfol , copyFinish)
-		// },
+		/*
+		 * Create PROVISION file
+		 */
+		createProvision:function(config){
+			var fs = require('fs');
+			var buffer=''+ 
+				'### AUTOMATICIALLY CREATED '+ "\n" + 
+				'### '+ config.projectName + "\n" + 
+				'#!/usr/bin/env bash' + "\n" +
+				'## FIX NAMESERVER ISSUES WITH UBUNTU16' + "\n" +
+				'echo "nameserver 8.8.8.8"> /etc/resolvconf/resolv.conf.d/tail' + "\n" +
+				'echo "nameserver 8.8.4.4">> /etc/resolvconf/resolv.conf.d/tail' + "\n" +
+				'rm /etc/resolv.conf' + "\n" +
+				'ln -s /run/resolvconf/resolv.conf /etc/resolv.conf' + "\n" +
+				'resolvconf -u' + "\n" +
+				'## UPDATE APT' + "\n" +
+				'apt-get update' + "\n" +
+				'## UPGRADE APT' + "\n" +
+				'apt-get -y upgrade' + "\n" +
+				'' + "\n" +
+				'## INSTALL PHP + MYSQL + APACHE' + "\n" +
+				'DEBIAN_FRONTEND=noninteractive apt-get -y install apache2 libapache2-mod-php mysql-server php-mysql php-gd php-curl php-soap php-xml php-xmlrpc' + "\n" +
+				'' + "\n" +
+				'## ENABLE MOD REWRITE' + "\n" +
+				'a2enmod rewrite' + "\n" +
+				'## SETUP MYSQL USER PASSWORD' + "\n" +
+				'mysqladmin -u root password ' + config.dbRootPass + "\n" +
+				'' + "\n" +
+				'## CREATE VHOST' + "\n" +
+				'echo "<VirtualHost *:80>" > /etc/apache2/sites-available/' + config.domainName + '.conf' + "\n" +
+				'echo "	ServerAdmin ' + config.authorMail + '" >> /etc/apache2/sites-available/' + config.domainName + '.conf' + "\n" +
+				'echo "	ServerName ' + config.domainName + '" >> /etc/apache2/sites-available/' + config.domainName + '.conf' + "\n" +
+				'echo "	DocumentRoot /var/www/main-site/" >> /etc/apache2/sites-available/' + config.domainName + '.conf' + "\n" +
+				'echo "	<Directory /var/www/main-site/>" >> /etc/apache2/sites-available/' + config.domainName + '.conf' + "\n" +
+				'echo "		Options Indexes FollowSymLinks MultiViews" >> /etc/apache2/sites-available/' + config.domainName + '.conf' + "\n" +
+				'echo "		AllowOverride All" >> /etc/apache2/sites-available/' + config.domainName + '.conf' + "\n" +
+				'echo "	</Directory>" >> /etc/apache2/sites-available/' + config.domainName + '.conf' + "\n" +
+				'echo "</VirtualHost>" >> /etc/apache2/sites-available/' + config.domainName + '.conf' + "\n" +
+				'' + "\n" +
+				'a2ensite ' + config.domainName + "\n" +
+				'service apache2 restart' + "\n" +
+				'' + "\n" +
+				'### END PROVISION' + "\n" ;
+
+			fs.writeFile(config.baseFolder + 'provision.sh', buffer, function (err) {
+			    if (err) 
+			        return console.log(err);
+			    console.log('Provision File Wirtten' + "\n");
+			    zc.createTheme(config);
+			});
+		},
 		createTheme: function(config){
 			console.log('Creating Helpers Folder')
 			var exec = require('child_process').exec;
@@ -321,7 +370,7 @@ var zc = (function(){
 
 /**** WORDPRESS INSTALL ****/
 // get template files from github
-zc.getWPTemplates(wp);
+zc.init(wp);
 
 //zc.createTheme(wp);
 
